@@ -1,7 +1,7 @@
-import string
 from typing import Iterable, Callable, Optional, Iterator, Set, Any
 import collections.abc
 import warnings
+import string
 
 class Tokenizer:
 	"""
@@ -69,19 +69,19 @@ class Tokenizer:
 
 	def remove_whitespace(self, setting: bool) -> "Tokenizer":
 		if not isinstance(setting, bool):
-			raise TypeError
+			raise TypeError("'remove_whitespace' must be a boolean value")
 		self._params["remove_whitespace"] = setting
 		return self
 
 	def remove_punctuation(self, setting: bool) -> "Tokenizer":
 		if not isinstance(setting, bool):
-			raise TypeError
+			raise TypeError("'remove_punctuation' must be a boolean value")
 		self._params["remove_punctuation"] = setting
 		return self
 
 	def remove_digits(self, setting: bool) -> "Tokenizer":
 		if not isinstance(setting, bool):
-			raise TypeError
+			raise TypeError("'remove_digits' must be a boolean value")
 		self._params["remove_digits"] = setting
 		return self
 
