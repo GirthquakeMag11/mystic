@@ -2,6 +2,7 @@ from typing import Iterable, Callable, Optional, Iterator, Set, Any
 import collections.abc
 import warnings
 import string
+import hashlib
 
 class Tokenizer:
 	"""
@@ -29,6 +30,12 @@ class Tokenizer:
 		def __len__(self) -> int:
 			return len(self.t._cache)
 
+		def __hash__(self) -> int:
+			hasher = hashlib.md5()
+			for s in self.t._cache:
+				hasher.update(s.encode())
+			return int.from_bytes(hasher.digest())
+
 		def add(self, item) -> "Tokenizer.CacheView":
 			self.t._cache.add(item)
 			return self
@@ -37,7 +44,7 @@ class Tokenizer:
 			self.t._cache.discard(item)
 			return self
 
-	def __init__(self, **parameters) -> None:
+	def __init__(self, initial_data=None, **parameters) -> None:
 		self._params = {
 			'remove_whitespace': False,
 			'remove_punctuation': False,
@@ -49,6 +56,7 @@ class Tokenizer:
 		}
 		self._data = set()
 		self._cache = set()
+		self._context = None
 		if parameters:
 			self.config(**parameters)
 
@@ -118,29 +126,39 @@ class Tokenizer:
 		self._params["post_processor"] = setting
 		return self
 
-	def load(self, data: str) -> "Tokenizer":
-		if not isinstance(data, str):
-			try:
-				data = str(data)
-			except Exception as e:
-				raise TypeError("'data' must be a string or an object with a properly implemented __str__ method.") from e
-		self._data.add(data)
+	# # #
+
+	def tokens(self) -> "Tokenizer.CacheView":
+		"""
+		Get a view of the current token cache.
+		"""
+		return Tokenizer.CacheView(self)
+
+	# # #
+
+	def __enter__(self, data: str = None, **parameters):
+		if data:
+			self._data.add(str(data))
+		self._context = functools.partial(self.tokenize, None, **parameters)
 		return self
 
-	def dump(self) -> Set[str]:
-		datadump = set(*self._cache)
-		for data_str in self._data:
-			for token in self.tokenize(data_str):
-				datadump.add(token)
-		return datadump
+	def __exit__(self, exc_type, exc_val, traceback):
+		self._context = None
 
-	def tokenize(self, data: str, **parameters) -> Iterator[str]:
+	# # #
+
+	def tokenize(self, data: str = None, **parameters) -> Iterator[str]:
 		"""
 		Splits input strings into tokens according to current configuration.
 		Any parameters provided here will be used instead of the current Tokenizer's settings
 		without overwriting them.
 		"""
 		p = {**self._params, **parameters}
+
+		if getattr(self, "_context", None) is not None:
+			if data is not None:
+				self._data.add(str(data))
+			yield from self._context()
 		
 		cur_token = ""
 
@@ -155,6 +173,9 @@ class Tokenizer:
 				self._cache.add(token_to_yield)
 			yield token_to_yield
 			cur_token = ""
+
+		if not data:
+			return
 
 		for char in str(data):
 			if char in p["grouping_chars"]:
@@ -174,9 +195,3 @@ class Tokenizer:
 				yield from yield_token(char)
 		if cur_token:
 			yield from yield_token()
-
-	def tokens(self) -> "Tokenizer.CacheView":
-		"""
-		Get a view of the current token cache.
-		"""
-		return Tokenizer.CacheView(self)
