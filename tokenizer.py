@@ -150,7 +150,7 @@ class Tokenizer:
 			if not token_to_yield:
 				return
 			if p["post_processor"]:
-				token_to_yield = str(p["post_processor"](token_to_yield))
+				token_to_yield = p["post_processor"](token_to_yield)
 			if p["cache_tokens"]:
 				self._cache.add(token_to_yield)
 			yield token_to_yield
