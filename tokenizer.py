@@ -46,6 +46,7 @@ class Tokenizer:
 			'yield_predicate': None,
 			'cache_tokens': False,
 		}
+		self._data = set()
 		self._cache = set()
 		if parameters:
 			self.config(**parameters)
@@ -109,6 +110,22 @@ class Tokenizer:
 			raise TypeError("'cache_tokens' must be a boolean value.")
 		self._params["cache_tokens"] = setting
 		return self
+
+	def load(self, data: str) -> "Tokenizer":
+		if not isinstance(data, str):
+			try:
+				data = str(data)
+			except Exception as e:
+				raise TypeError("'data' must be a string or an object with a properly implemented __str__ method.") from e
+		self._data.add(data)
+		return self
+
+	def dump(self) -> Set[str]:
+		datadump = set(*self._cache)
+		for data_str in self._data:
+			for token in self.tokenize(data_str):
+				datadump.add(token)
+		return datadump
 
 	def tokenize(self, data: str, **parameters) -> Iterator[str]:
 		"""
