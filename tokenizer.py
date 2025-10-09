@@ -45,6 +45,7 @@ class Tokenizer:
 			'grouping_chars': Tokenizer.DEFAULT_CHARSET,
 			'yield_predicate': None,
 			'cache_tokens': False,
+			'post_processor': None,
 		}
 		self._data = set()
 		self._cache = set()
@@ -111,6 +112,12 @@ class Tokenizer:
 		self._params["cache_tokens"] = setting
 		return self
 
+	def post_processor(self, setting: Callable) -> "Tokenizer":
+		if setting is not None and not callable(setting):
+			raise TypeError("'post_processor' must be callable or None.")
+		self._params["post_processor"] = setting
+		return self
+
 	def load(self, data: str) -> "Tokenizer":
 		if not isinstance(data, str):
 			try:
@@ -142,6 +149,8 @@ class Tokenizer:
 			token_to_yield = token if token is not None else cur_token
 			if not token_to_yield:
 				return
+			if p["post_processor"]:
+				token_to_yield = str(p["post_processor"](token_to_yield))
 			if p["cache_tokens"]:
 				self._cache.add(token_to_yield)
 			yield token_to_yield
