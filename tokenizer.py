@@ -15,7 +15,7 @@ class Tokenizer:
 	- Custom predicate for filtering yielded tokens
 	- Caching of seen tokens for batch or post-processing
 	"""
-	DEFAULT_CHARSET = ("'", *string.ascii_letters)
+	DEFAULT_CHARSET = ("'", *string.ascii_letters, *string.digits)
 
 	class CacheView:
 		def __init__(self, tokenizer: "Tokenizer"):
@@ -53,6 +53,7 @@ class Tokenizer:
 			'yield_predicate': None,
 			'cache_tokens': False,
 			'post_processor': None,
+			'deduplicate_output': True,
 		}
 		self._data = set()
 		self._cache = set()
@@ -161,12 +162,21 @@ class Tokenizer:
 			yield from self._context()
 		
 		cur_token = ""
+		seen = set()
 
 		def yield_token(token=None):
 			nonlocal cur_token
 			token_to_yield = token if token is not None else cur_token
 			if not token_to_yield:
 				return
+			if p["deduplicate_output"]:
+				nonlocal seen
+				if token_to_yield in seen:
+					if token_to_yield == cur_token:
+						cur_token = ""
+					return
+				else:
+					seen.add(token_to_yield)
 			if p["post_processor"]:
 				token_to_yield = p["post_processor"](token_to_yield)
 			if p["cache_tokens"]:
@@ -179,7 +189,7 @@ class Tokenizer:
 
 		for char in str(data):
 			if char in p["grouping_chars"]:
-				cur_token ++ char
+				cur_token += char
 			else:
 				if cur_token:
 					yield from yield_token()
