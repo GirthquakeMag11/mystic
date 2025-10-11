@@ -1,18 +1,17 @@
 from pathlib import Path
+from tokenizer import Tokenizer
+
 
 with open(Path(__file__).parent / "en_US.dic", "r") as file:
-	data = file.readlines()
+	data = file.read()
 
-names = []
-words = []
-other = []
+test_tokenizer = Tokenizer()
+# Default params test
 
-for entry in data:
-	word = entry.strip("\n").split("/")[0]
-	if word[0].islower():
-		words.append(word)
-	else:
-		other.append(word)
+print("Press Enter for next token")
+next_token = test_tokenizer
 
-with open(Path.cwd() / "words.txt", "w") as wordfile:
-	wordfile.write("\n".join(words))
+for token in test_tokenizer.tokenize(data, remove_whitespace=True, deduplicate_output=True):
+	input()
+	print(token)
+
