@@ -187,9 +187,18 @@ class Tokenizer:
 		if not data:
 			return
 
-		for char in str(data):
+		i = -1
+		data = str(data)
+		for char in data:
+			i += 1
 			if char in p["grouping_chars"]:
 				cur_token += char
+			if char == ".":
+				try:
+					if extension := ext_match(data[i]):
+						cur_token += extension
+						i += len(extension)
+
 			else:
 				if cur_token:
 					yield from yield_token()
