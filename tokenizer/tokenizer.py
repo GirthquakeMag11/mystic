@@ -19,9 +19,9 @@ class Tokenizer:
 		next(generator)
 		return cls(generator=generator)
 
-	def __init__(self, data: str = "", generator: Generator = None, **parameters):
-		self._data = data
-		self._generator = generator
+	def __init__(self, data: str = '', **parameters):
+		self._data = data if data.strip() else None
+		self._generator = parameters.pop("generator", None)
 		self._cur_token = ""
 		self._queued_tokens = []
 		self._idx = -1
@@ -39,11 +39,11 @@ class Tokenizer:
 					return self._generator.send(self._idx)
 				else:
 					raise
-		if self._data and (self._idx > -1):
+		elif self._data and (self._idx > -1):
 			return self._data[self._idx]
 
 	def _queue(self, *token):
-		self._queued_tokens.extend([t.strip() for t in token if (t.strip() and self._duplicate_check(t))])
+		self._queued_tokens.extend([t for t in token if self._duplicate_check(t)])
 		if self._cur_token in token:
 			self._cur_token = ""
 
@@ -125,7 +125,6 @@ class Tokenizer:
 						continue
 					if self._standard_compound():
 						continue
-
 
 				self._queue(self._cur_token, self._cur_char)
 			elif self._cur_token:
