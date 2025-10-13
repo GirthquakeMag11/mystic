@@ -1,6 +1,6 @@
-import string
-from fnmatch import fnmatch
 from typing import Generator
+import fnmatch
+import string
 
 class Tokenizer:
 	GROUPING_CHARS = ("'","’", *string.ascii_letters, *string.digits)
@@ -54,7 +54,7 @@ class Tokenizer:
 			self._cur_token = ""
 
 	def _queue_check(self, token):
-		if not fnmatch(token, self._match_pattern):
+		if not fnmatch.fnmatch(token, self._match_pattern):
 			return False
 		if self._omit_whitespace:
 			if not token.strip():
