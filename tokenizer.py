@@ -101,7 +101,7 @@ class Tokenizer:
 		return False
 
 	def _standard_compound(self):
-		"""Normal compound character check for things like compound words, dates, times. Ex: '08-12-2015', 'over-blown', '12:15'."""
+		"""Normal compound character check for things like compound words, dates, times. Ex: '08-12-2015', 'over-blown', 'f**k', '12:15'."""
 		if self._data[self._idx - 1] in Tokenizer.GROUPING_CHARS and self._data[self._idx + 1] in Tokenizer.GROUPING_CHARS:
 			self._cur_token += self._cur_char
 			return True
