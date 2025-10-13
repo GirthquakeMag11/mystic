@@ -3,7 +3,7 @@ import string
 def indexalpha(data: str) -> int:
 	if not isinstance(data, str):
 		if not hasattr(data, "__str__"):
-			raise TypeError(f"'data' argument must be a string. Received type: {type(char).__name__}") from None
+			raise TypeError(f"'data' argument must be a string. Received type: {type(char).__name__}")
 		data = str(data)
 	if len(data) > 1:
 		return (indexalpha(c) for c in data)
