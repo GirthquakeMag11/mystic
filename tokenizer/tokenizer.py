@@ -21,10 +21,10 @@ class Tokenizer:
 
 	def __init__(self, data: str = "", generator: Generator = None, **parameters):
 		self._data = data
+		self._generator = generator
 		self._cur_token = ""
 		self._queued_tokens = []
 		self._idx = -1
-		self._generator = generator
 		self._seen = set()
 		self._deduplicate_output = parameters.pop("deduplicate_output", False)
 
