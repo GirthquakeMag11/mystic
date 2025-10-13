@@ -1,4 +1,5 @@
 import string
+from fnmatch import fnmatch
 from typing import Generator
 
 class Tokenizer:
@@ -27,6 +28,11 @@ class Tokenizer:
 		self._idx = -1
 		self._seen = set()
 		self._deduplicate_output = parameters.pop("deduplicate_output", False)
+		self._emojis = parameters.pop("attempt_emojis", True)
+		self._urls = parameters.pop("attempt_urls", True)
+		self._ellipsis = parameters.pop("ellipsis", True)
+		self._omit_whitespace = parameters.pop("omit_whitespace", True)
+		self._match_pattern = parameters.pop("match_pattern", "**")
 
 	@property
 	def _cur_char(self):
@@ -43,9 +49,22 @@ class Tokenizer:
 			return self._data[self._idx]
 
 	def _queue(self, *token):
-		self._queued_tokens.extend([t for t in token if self._duplicate_check(t)])
+		self._queued_tokens.extend([t for t in token if self._queue_check(t)])
 		if self._cur_token in token:
 			self._cur_token = ""
+
+	def _queue_check(self, token):
+		if not fnmatch(token, self._match_pattern):
+			return False
+		if self._omit_whitespace:
+			if not token.strip():
+				return False
+		if self._deduplicate_output:
+			if token in self._seen:
+				return False
+			else:
+				self._seen.add(token)
+		return token
 
 	def _group_char(self):
 		if self._cur_char in Tokenizer.GROUPING_CHARS:
@@ -59,13 +78,13 @@ class Tokenizer:
 	def _special_compounds(self):
 		if self._cur_char == ".":
 			# Ellipsis check
-			if self._data[self._idx:self._idx+3] == Tokenizer.ELLIPSIS:
+			if self._ellipsis and self._data[self._idx:self._idx+3] == Tokenizer.ELLIPSIS:
 				self._queue(self._cur_token, Tokenizer.ELLIPSIS)
 				self._idx += 2
 				return True
 		elif self._cur_char == ":":
 			# Emoji check
-			if (next_colon := data.find(":", self._idx + 1)) > 0:
+			if self._emojis and (next_colon := data.find(":", self._idx + 1)) > 0:
 				next_colon += 1
 				possible_emoji = self._data[self._idx:next_colon]
 				if not any(char in string.whitespace for char in possible_emoji):
@@ -73,10 +92,10 @@ class Tokenizer:
 					self._idx = next_colon
 					return True
 			# URL prefix check
-			if self._cur_token.strip().casefold().startswith("http"):
+			if self._urls and self._cur_token.strip().casefold().startswith("http"):
 				self._cur_token += self._cur_char
 				return True
-			# fallback (just a colon)
+			# fallback (just a colon- not part of compound token)
 			self._queue(self._cur_token, ":")
 			return True
 		return False
@@ -100,14 +119,6 @@ class Tokenizer:
 			self._idx += 1
 			return True
 		return False
-
-	def _duplicate_check(self, token):
-		if self._deduplicate_output:
-			if token in self._seen:
-				return False
-			else:
-				self._seen.add(token)
-		return token
 
 	def __iter__(self):
 		return self
