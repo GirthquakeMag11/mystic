@@ -13,7 +13,7 @@ class Tokenizer:
 		self._rd = remove_duplicates
 		self._ct = {}
 
-	def __iter__(self):
+	def __iter__(self) -> Iterator[str]:
 		cur_token = ""
 		seen = set()
 		data = self._data
