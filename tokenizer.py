@@ -1,93 +1,146 @@
 import string
+from fnmatch import fnmatch
+from typing import Generator
 
 class Tokenizer:
 	GROUPING_CHARS = ("'","’", *string.ascii_letters, *string.digits)
 	COMPOUND_CHARS = (".","-","–","—","@",",","/","_",":")
+	ELLIPSIS = "..."
 
-	def __init__(self, data: str, remove_whitespace: bool = False, remove_duplicates: bool = False):
-		if isinstance(data, str):
-			self._data = data
-		else:
-			raise TypeError(f"Tokenizer data must be a string, provided type: '{type(data).__name__}'")
-		self._rw = remove_whitespace
-		self._rd = remove_duplicates
-		self._ct = {}
+	@classmethod
+	def fromfile(cls, filepath, encoding="utf-8"):
+		def generate_char_from_file():
+			with open(filepath, "r", encoding=encoding) as f:
+				idx = yield
+				while True:
+					f.seek(idx)
+					char = f.read(1)
+					idx = yield char
+		generator = generate_char_from_file()
+		next(generator)
+		return cls(generator=generator)
 
-	def __iter__(self) -> Iterator[str]:
-		cur_token = ""
-		seen = set()
-		data = self._data
+	def __init__(self, data: str = '', **parameters):
+		self._data = data if data.strip() else None
+		self._generator = parameters.pop("generator", None)
+		self._cur_token = ""
+		self._queued_tokens = []
+		self._idx = -1
+		self._seen = set()
+		self._deduplicate_output = parameters.pop("deduplicate_output", False)
+		self._emojis = parameters.pop("attempt_emojis", True)
+		self._urls = parameters.pop("attempt_urls", True)
+		self._ellipsis = parameters.pop("ellipsis", True)
+		self._omit_whitespace = parameters.pop("omit_whitespace", True)
+		self._match_pattern = parameters.pop("match_pattern", "**")
 
-		def check_remove_dup(token):
-			if self._rd:
-				if token in seen:
-					return False
-				else:
-					seen.add(token)
-			return True
-
-		def check_remove_ws(token):
-			if self._rw:
-				token = "".join([c for c in token if c not in string.whitespace])
-				if token.strip():
-					return token.strip()
-				return False
-			return token
-
-		def yield_token(token=None):
-			nonlocal cur_token
-			token_to_yield = token if token is not None else cur_token
-			if token_to_yield:
-				if check_remove_dup(token_to_yield):
-					if valid_token := check_remove_ws(token_to_yield):
-						yield valid_token
-				self._ct.setdefault(token_to_yield, self._ct.get(token_to_yield, 0) + 1)
-				cur_token = ""
-
-		def flush_yield(token):
-			if cur_token:
-				yield from yield_token()
-			yield from yield_token(token)
-
-		i = -1
-		while True:
+	@property
+	def _cur_char(self):
+		if self._generator:
 			try:
-				i += 1
-				char = data[i]
-				if char in Tokenizer.GROUPING_CHARS:
-					cur_token += char
+				return self._generator.send(self._idx)
+			except TypeError as e:
+				if "just-started generator" in str(e):
+					next(self._generator)
+					return self._generator.send(self._idx)
+				else:
+					raise
+		elif self._data and (self._idx > -1):
+			return self._data[self._idx]
+
+	def _queue(self, *token):
+		self._queued_tokens.extend([t for t in token if self._queue_check(t)])
+		if self._cur_token in token:
+			self._cur_token = ""
+
+	def _queue_check(self, token):
+		if not fnmatch(token, self._match_pattern):
+			return False
+		if self._omit_whitespace:
+			if not token.strip():
+				return False
+		if self._deduplicate_output:
+			if token in self._seen:
+				return False
+			else:
+				self._seen.add(token)
+		return token
+
+	def _group_char(self):
+		if self._cur_char in Tokenizer.GROUPING_CHARS:
+			self._cur_token += self._cur_char
+			return True
+		return False
+
+	def _compound_char(self):
+		return bool(self._cur_char in Tokenizer.GROUPING_CHARS)
+
+	def _special_compounds(self):
+		if self._cur_char == ".":
+			# Ellipsis check
+			if self._ellipsis and self._data[self._idx:self._idx+3] == Tokenizer.ELLIPSIS:
+				self._queue(self._cur_token, Tokenizer.ELLIPSIS)
+				self._idx += 2
+				return True
+		elif self._cur_char == ":":
+			# Emoji check
+			if self._emojis and (next_colon := data.find(":", self._idx + 1)) > 0:
+				next_colon += 1
+				possible_emoji = self._data[self._idx:next_colon]
+				if not any(char in string.whitespace for char in possible_emoji):
+					self._queue(self._cur_token, possible_emoji)
+					self._idx = next_colon
+					return True
+			# URL prefix check
+			if self._urls and self._cur_token.strip().casefold().startswith("http"):
+				self._cur_token += self._cur_char
+				return True
+			# fallback (just a colon- not part of compound token)
+			self._queue(self._cur_token, ":")
+			return True
+		return False
+
+	def _standard_compound(self):
+		"""Normal compound character check for things like compound words, dates, times. Ex: '08-12-2015', 'over-blown', '12:15'."""
+		if self._data[self._idx - 1] in Tokenizer.GROUPING_CHARS and self._data[self._idx + 1] in Tokenizer.GROUPING_CHARS:
+			self._cur_token += self._cur_char
+			return True
+		return False
+
+	def _shift_idx(self):
+		if self._data:
+			try:
+				n = self._data[self._idx + 1]
+				self._idx += 1
+				return True
+			except IndexError:
+				return False
+		elif self._generator:
+			self._idx += 1
+			return True
+		return False
+
+	def __iter__(self):
+		return self
+
+	def __next__(self):
+		while True:
+			if self._queued_tokens:
+				return self._queued_tokens.pop(0)
+
+			if self._shift_idx():
+				if self._group_char():
 					continue
-
-				if char in Tokenizer.COMPOUND_CHARS:
-					if char == ".":
-						if data[i:i+3] == "...":
-							yield from flush_yield("...")
-							i = i + 2
-							continue
-
-					if char == ":":
-						if (next_colon := data.find(":", i + 1)) > 0:
-							possible_emoji = data[i:next_colon + 1]
-							if not any(c in string.whitespace for c in possible_emoji):
-								yield from flush_yield(possible_emoji)
-								i = next_colon + 1
-								continue
-						if cur_token.strip().casefold() == "https":
-							cur_token += char
-							continue
-
-						yield from flush_yield(":")
+				if self._compound_char():
+					if self._special_compounds():
+						continue
+					if self._standard_compound():
 						continue
 
-					if data[i - 1] in Tokenizer.GROUPING_CHARS and data[i + 1] in Tokenizer.GROUPING_CHARS:
-						cur_token += char
-						continue
+				self._queue(self._cur_token, self._cur_char)
+			elif self._cur_token:
+				self._queue(self._cur_token)
+			else:
+				break
 
-				yield from flush_yield(char)
-
-			except IndexError as e:
-				if "index out of range" in str(e):
-					pass
-
-		if cur_token:
-			yield from yield_token()
+		raise StopIteration
