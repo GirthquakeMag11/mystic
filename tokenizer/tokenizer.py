@@ -43,7 +43,7 @@ class Tokenizer:
 			return self._data[self._idx]
 
 	def _queue(self, *token):
-		self._queued_tokens.extend([t.strip() for t in token if t.strip()])
+		self._queued_tokens.extend([t.strip() for t in token if (t.strip() and self._duplicate_check(t))])
 		if self._cur_token in token:
 			self._cur_token = ""
 
@@ -54,9 +54,7 @@ class Tokenizer:
 		return False
 
 	def _compound_char(self):
-		if self._cur_char in Tokenizer.GROUPING_CHARS:
-			return True
-		return False
+		return bool(self._cur_char in Tokenizer.GROUPING_CHARS)
 
 	def _special_compounds(self):
 		if self._cur_char == ".":
@@ -103,11 +101,10 @@ class Tokenizer:
 			return True
 		return False
 
-	def _next_token(self):
-		token = self._queued_tokens.pop(0)
+	def _duplicate_check(self, token):
 		if self._deduplicate_output:
 			if token in self._seen:
-				return None
+				return False
 			else:
 				self._seen.add(token)
 		return token
@@ -118,8 +115,7 @@ class Tokenizer:
 	def __next__(self):
 		while True:
 			if self._queued_tokens:
-				if token := self._next_token():
-					return token
+				return self._queued_tokens.pop(0)
 
 			if self._shift_idx():
 				if self._group_char():
@@ -129,6 +125,8 @@ class Tokenizer:
 						continue
 					if self._standard_compound():
 						continue
+
+
 				self._queue(self._cur_token, self._cur_char)
 			elif self._cur_token:
 				self._queue(self._cur_token)
