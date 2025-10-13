@@ -1,5 +1,5 @@
 import string
-
+from typing import Generator
 
 class Tokenizer:
 	GROUPING_CHARS = ("'","’", *string.ascii_letters, *string.digits)
@@ -7,101 +7,119 @@ class Tokenizer:
 	ELLIPSIS = "..."
 
 	@classmethod
-	def fromfile(cls, filepath):
+	def fromfile(cls, filepath, encoding="utf-8"):
 		def generate_char_from_file():
-			with open(filepath, "r") as f:
+			with open(filepath, "r", encoding=encoding) as f:
 				idx = yield
 				while True:
 					f.seek(idx)
 					char = f.read(1)
-					index = yield char
-		return cls(generator=generate_char_from_file())
+					idx = yield char
+		generator = generate_char_from_file()
+		next(generator)
+		return cls(generator=generator)
 
-	def __init__(self, data: str = "", generator: Generator = None):
-		self.data = data
-		self.cur_token = ""
-		self.queued_tokens = []
-		self.idx = -1
-		if generator:
-			self.generator = generator
+	def __init__(self, data: str = "", generator: Generator = None, **parameters):
+		self._data = data
+		self._cur_token = ""
+		self._queued_tokens = []
+		self._idx = -1
+		self._generator = generator
+		self._seen = set()
+		self._deduplicate_output = parameters.pop("deduplicate_output", False)
 
 	@property
 	def _cur_char(self):
-		if hasattr(self, "generator"):
+		if self._generator:
 			try:
-				return self.generator.send(self.idx)
+				return self._generator.send(self._idx)
 			except TypeError as e:
 				if "just-started generator" in str(e):
-					next(self.generator)
-					return self._cur_char
+					next(self._generator)
+					return self._generator.send(self._idx)
 				else:
 					raise
-		if self.data and (self.idx > -1):
-			return self.data[self.idx]
+		if self._data and (self._idx > -1):
+			return self._data[self._idx]
 
 	def _queue(self, *token):
-		self.queued_tokens.extend([t.strip() for t in token if t.strip()])
-		if self.cur_token in token:
-			self.cur_token = ""
+		self._queued_tokens.extend([t.strip() for t in token if t.strip()])
+		if self._cur_token in token:
+			self._cur_token = ""
 
 	def _group_char(self):
 		if self._cur_char in Tokenizer.GROUPING_CHARS:
-			self.cur_token += self._cur_char
+			self._cur_token += self._cur_char
 			return True
 		return False
 
 	def _compound_char(self):
-		if self.data[self.idx] in Tokenizer.GROUPING_CHARS:
+		if self._cur_char in Tokenizer.GROUPING_CHARS:
 			return True
 		return False
 
 	def _special_compounds(self):
 		if self._cur_char == ".":
 			# Ellipsis check
-			if self.data[self.idx:self.idx+3] == Tokenizer.ELLIPSIS:
-				self._queue(self.cur_token, Tokenizer.ELLIPSIS)
-				self.idx += 2
+			if self._data[self._idx:self._idx+3] == Tokenizer.ELLIPSIS:
+				self._queue(self._cur_token, Tokenizer.ELLIPSIS)
+				self._idx += 2
 				return True
 		elif self._cur_char == ":":
 			# Emoji check
-			if (next_colon := data.find(":", self.idx + 1)) > 0:
+			if (next_colon := data.find(":", self._idx + 1)) > 0:
 				next_colon += 1
-				possible_emoji = self.data[self.idx:next_colon]
+				possible_emoji = self._data[self._idx:next_colon]
 				if not any(char in string.whitespace for char in possible_emoji):
-					self._queue(self.cur_token, possible_emoji)
-					self.idx = next_colon
+					self._queue(self._cur_token, possible_emoji)
+					self._idx = next_colon
 					return True
 			# URL prefix check
-			if self.cur_token.strip().casefold().startswith("http"):
-				self.cur_token += self._cur_char
+			if self._cur_token.strip().casefold().startswith("http"):
+				self._cur_token += self._cur_char
 				return True
 			# fallback (just a colon)
-			self._queue(self.cur_token, ":")
+			self._queue(self._cur_token, ":")
 			return True
 		return False
 
 	def _standard_compound(self):
 		"""Normal compound character check for things like compound words, dates, times. Ex: '08-12-2015', 'over-blown', '12:15'."""
-		if self.data[self.idx - 1] in Tokenizer.GROUPING_CHARS and self.data[self.idx + 1] in Tokenizer.GROUPING_CHARS:
-			self.cur_token += self._cur_char
+		if self._data[self._idx - 1] in Tokenizer.GROUPING_CHARS and self._data[self._idx + 1] in Tokenizer.GROUPING_CHARS:
+			self._cur_token += self._cur_char
 			return True
 		return False
 
 	def _shift_idx(self):
-		try:
-			n = self.data[self.idx + 1]
-			self.idx += 1
+		if self._data:
+			try:
+				n = self._data[self._idx + 1]
+				self._idx += 1
+				return True
+			except IndexError:
+				return False
+		elif self._generator:
+			self._idx += 1
 			return True
-		except IndexError:
-			return False
+		return False
+
+	def _next_token(self):
+		token = self._queued_tokens.pop(0)
+		if self._deduplicate_output:
+			if token in self._seen:
+				return None
+			else:
+				self._seen.add(token)
+		return token
 
 	def __iter__(self):
 		return self
 
 	def __next__(self):
 		while True:
-			if self.queued_tokens:
-				return self.queued_tokens.pop(0)
+			if self._queued_tokens:
+				if token := self._next_token():
+					return token
 
 			if self._shift_idx():
 				if self._group_char():
@@ -111,16 +129,10 @@ class Tokenizer:
 						continue
 					if self._standard_compound():
 						continue
-				self._queue(self.cur_token, self.data[self.idx])
-			elif self.cur_token:
-				self._queue(self.cur_token)
+				self._queue(self._cur_token, self._cur_char)
+			elif self._cur_token:
+				self._queue(self._cur_token)
 			else:
 				break
 
 		raise StopIteration
-
-if __name__ == "__main__":
-	input()
-	for token in Tokenizer("hello world my name is hp lovecraft and this is my cat niggerman"):
-		input()
-		print(token)
