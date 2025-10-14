@@ -15,6 +15,8 @@ class Tokenizer:
 				while True:
 					f.seek(idx)
 					char = f.read(1)
+					if not char:
+						return
 					idx = yield char
 		generator = generate_char_from_file()
 		next(generator)
