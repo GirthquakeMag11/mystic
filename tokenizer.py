@@ -23,8 +23,10 @@ class Tokenizer:
 		return cls(generator=generator)
 
 	def __init__(self, data: str = '', **parameters):
-		self._data = data if data.strip() else None
 		self._generator = parameters.pop("generator", None)
+		self._ellipsis = parameters.pop("ellipsis", True)
+		self._omit_whitespace = parameters.pop("omit_whitespace", True)
+		self._data = data if data.strip() else None
 		self._cur_token = ""
 		self._queued_tokens = []
 		self._idx = -1
@@ -32,9 +34,8 @@ class Tokenizer:
 		self._deduplicate_output = parameters.pop("deduplicate_output", False)
 		self._emojis = parameters.pop("attempt_emojis", True)
 		self._urls = parameters.pop("attempt_urls", True)
-		self._ellipsis = parameters.pop("ellipsis", True)
-		self._omit_whitespace = parameters.pop("omit_whitespace", True)
-		self._match_pattern = parameters.pop("match_pattern", "**")
+		self._yaml = parameters.pop("attempt_yaml", True)
+		self._markdown = parameters.pop("attempt_md", parameters.pop("attempt_markdown", True))
 
 	@property
 	def _cur_char(self):
@@ -56,8 +57,6 @@ class Tokenizer:
 			self._cur_token = ""
 
 	def _queue_check(self, token):
-		if not fnmatch.fnmatch(token, self._match_pattern):
-			return False
 		if self._omit_whitespace:
 			if not token.strip():
 				return False
@@ -84,6 +83,7 @@ class Tokenizer:
 				self._queue(self._cur_token, Tokenizer.ELLIPSIS)
 				self._idx += 2
 				return True
+
 		elif self._cur_char == ":":
 			# Emoji check
 			if self._emojis and (next_colon := data.find(":", self._idx + 1)) > 0:
@@ -100,6 +100,10 @@ class Tokenizer:
 			# fallback (just a colon- not part of compound token)
 			self._queue(self._cur_token, ":")
 			return True
+
+		if self._yaml:
+
+
 		return False
 
 	def _standard_compound(self):
