@@ -1,5 +1,46 @@
 import string
+import enum
+from dataclasses import dataclass, field
 
+
+class Markdown(enum.Enum):
+	BULLET = "- "
+	CHECKBOX_FALSE = "- [ ] "
+	CHECKBOX_TRUE = "- [x] "
+	HEADER_1 = "# "
+	HEADER_2 = "## "
+	HEADER_3 = "### "
+	HEADER_4 = "#### "
+	HEADER_5 = "##### "
+	HEADER_6 = "###### "
+
+class YAML(enum.Enum):
+	START_END = "---"
+
+	@dataclass
+	class Title:
+		value: str
+		def __str__(self):
+			return f"title: {self.value}"
+
+	@dataclass
+	class Tag:
+		value: str
+		def __str__(self):
+			return f"  - {self.value}"
+
+	@dataclass
+	class Alias:
+		value: str
+		def __str__(self):
+			return f"  - {self.value}"
+
+	@dataclass
+	class Property:
+		name: str
+		value: Any
+		def __str__(self):
+			return f"{self.name}: {self.value}"
 
 class Parser:
 	GROUPING_CHARS = ("'","’", *string.ascii_letters, *string.digits)
@@ -7,12 +48,10 @@ class Parser:
 	HTTP = "http"
 	HTTPS = "https"
 	ELLIPSIS = "..."
-	BULLET = "- "
-	CHECKBOX_FALSE = "- [ ] "
-	CHECKBOX_TRUE = "- [x] "
 
-	def __init__(self, data: str = '', **parameters):
+	def __init__(self, data: str = '', lines: Iterable[str] = None, **parameters):
 		self._data = data
+		self._lines = [line for line in lines] if lines is not None else [self._data.splitlines()]
 		self._ellipsis = parameters.pop("ellipsis", True)
 		self._deduplicate = parameters.pop("deduplicate_output", False)
 		self._omit_whitespace = parameters.pop("omit_whitespace", False)
@@ -31,8 +70,15 @@ class Parser:
 		if self._data.strip() and (self._idx > -1):
 			return self._data[self._idx]
 
-	def _next_chars(self, amt: int):
-		return self._data[self._idx:self._idx + int(amt)]
+	def _next_chars(self, char: str = None, idx: int = None):
+		if idx:
+			return self._data[self._idx:self._idx + int(idx)]
+		elif char:
+			i = 0
+			while self._data[self._idx + i] == char:
+				i += 1
+			return self._next_chars(idx=i+1)
+
 
 	def _to_char(self, char: str = None, idx: int = None):
 		"""
@@ -84,7 +130,7 @@ class Parser:
 	def _special_compounds(self):
 		# Ellipsis check
 		if self._ellipsis:
-			if self._cur_char == "." and self._next_chars(3) == Parser.ELLIPSIS:
+			if self._cur_char == "." and self._next_chars(idx=3) == Parser.ELLIPSIS:
 				self._queue(Parser.ELLIPSIS)
 				self._idx += 2
 				return True
@@ -107,7 +153,35 @@ class Parser:
 		"""not written yet"""
 
 		# Markdown check
-		"""not written yet"""
+		if self._markdown:
+			# Markdown header check
+			if self._cur_char == "#":
+				hashtag_sequence = self._next_chars("#")
+				if self._data[self._idx - 1] == "\n":
+					try:
+						if not self._data[self._idx + len(hashtag_sequence)] in string.whitespace:
+							self._queue(hashtag_sequence)
+							self._idx += len(hashtag_sequence)
+							return True
+					except IndexError:
+						pass
+			# Markdown bullet check
+			if self._cur_char == "-":
+				if self._next_chars(len(Markdown.BULLET) - 1) == Markdown.BULLET:
+					# Markdown checkbox check
+					possible_checkbox = self._next_chars(len(Markdown.CHECKBOX_FALSE) - 1)
+					if possible_checkbox == Markdown.CHECKBOX_FALSE:
+						self._queue(Markdown.CHECKBOX_FALSE)
+						self._idx += len(Markdown.CHECKBOX_FALSE)
+						return True
+					elif possible_checkbox == Markdown.CHECKBOX_TRUE:
+						self._queue(Markdown.CHECKBOX_TRUE)
+						self._idx += len(Markdown.CHECKBOX_TRUE)
+						return True
+					else:
+						self._queue(Markdown.BULLET)
+						self._idx += len(Markdown.BULLET)
+						return True
 
 		# No special compound identified
 		return False
