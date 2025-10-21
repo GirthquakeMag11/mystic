@@ -31,7 +31,7 @@ class Markdown(Enum):
 			if line.lstrip().startswith(header.value):
 				return header.value.count("#")
 
-class YAML:
+class YAML(Enum):
 	INDENT_1 = "  "
 	INDENT_2 = "    "
 
@@ -47,3 +47,12 @@ class YAML:
 	def sequence_item(line):
 		line = str(line).strip()
 		return fnmatch(line, INDENT_1 + "- *") or fnmatch(line, INDENT_2 + "- *")
+
+class Text(Enum):
+	GROUPING_CHARS = ("'","’", *string.ascii_letters, *string.digits)
+	COMPOUND_CHARS = (".","-","–","—","@",",","/","_",":")
+	ELLIPSIS = "..."
+
+class URL(Enum):
+	PREFIX = ("http","https","://","www.")
+	SUFFIX = (".com",".net",".org",".edu",".gov",".co",".ca",".uk")
