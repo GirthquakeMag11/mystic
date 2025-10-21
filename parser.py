@@ -3,17 +3,6 @@ import enum
 from dataclasses import dataclass, field
 
 
-class Markdown(enum.Enum):
-	BULLET = "- "
-	CHECKBOX_FALSE = "- [ ] "
-	CHECKBOX_TRUE = "- [x] "
-	HEADER_1 = "# "
-	HEADER_2 = "## "
-	HEADER_3 = "### "
-	HEADER_4 = "#### "
-	HEADER_5 = "##### "
-	HEADER_6 = "###### "
-
 class YAML(enum.Enum):
 	START_END = "---"
 
