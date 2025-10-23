@@ -1,4 +1,3 @@
-import string
 from typing import Any, Sequence
 
 def mean(*args: Any):
@@ -23,13 +22,18 @@ def roundup(arg: float):
 def rounddown(arg: float):
 	return arg - (arg % 1)
 
-def round(arg: float):
+def round(arg: float, if_equal: str = None):
 	if (rem := arg % 1) > 0.5:
 		return roundup(arg)
 	elif rem < 0.5:
 		return rounddown(arg)
 	elif rem == 0.5:
-		raise ValueError(rem)
+		if str(if_equal) in ["up","+","roundup"]:
+			return roundup(arg)
+		elif str(if_equal) in ["down","-","rounddown"]:
+			return rounddown(arg)
+		else:
+			raise ValueError(rem)
 
 def normalize_to_one(arg: Any, max_val: Any, min_val: Any = 0):
 	return (arg - min_val) / (max_val - min_val)
