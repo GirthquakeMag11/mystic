@@ -8,28 +8,77 @@ from collections.abc import (
 	Sequence,
 	)
 import string
+from dataclasses import dataclass
+import warnings
+
 
 class Table(MutableMapping):
 
-	class TableSubset(ABC, MutableSequence):
+	# # #
+
+	class TableElement(ABC):
+
+		def __init_subclass__(cls):
+			super().__init_subclass__(cls)
+			if not hasattr(cls, "__str__"):
+				warnings.warn(f"TableElement subclass {cls.__name__} missing '__str__' method, metadata storage non-functional.", UserWarning)
+
+		def metadata(self, **values):
+			if not hasattr(self, "__str__"):
+				warnings.warn(f"TableElement subclass {cls.__name__} missing '__str__' method, metadata storage non-functional.", UserWarning)
+				return
+			if str(self) not in self.table._metadata:
+				return self.table._metadata.setdefault(str(self), dict(values))
+			self.table._metadata[str(self)].update(dict(values))
+			return self.table._metadata[str(self)]
+
+		@abstractmethod
+		def __str__(self):
+			pass
+
+	# # #
+
+	@dataclass(frozen=True)
+	class Cell(TableElement):
+		table: "Table"
+		column: int
+		row: int
+		value: T.Any
+
+		def set(self, value: T.Any) -> "Table.Cell":
+			object.__setattr__(self, "value", value)
+			return self
+
+		def __post_init__(self):
+			if isinstance(self.value, Table.Cell):
+				object.__setattr__(self, "value", self.value.value)
+
+		def __str__(self):
+			return f"{type(self).__name__}_{self.column}x{self.row}"
+
+	# # #
+
+	class TableSubset(ABC, TableElement):
 
 		def __init_subclass__(cls, *args, **kwargs):
 			super().__init_subclass__(cls)
 			abstract_methods = ("__getitem__","__setitem__","__len__")
 			for mandatory in abstract_methods:
 				if not callable(getattr(cls, mandatory, None)):
-					raise TypeError(f"TableSubset subclass {cls.__name__} missing required method {mandatory}")
+					raise TypeError(f"TableSubset subclass {cls.__name__} missing required method {mandatory}.")
 
-		def __init__(self, table: "Table", table_idx: int):
+		def __init__(self, table: "Table", table_index: int, initial_data: T.Iterable = None):
 			self.table = table
-			self.idx = table_idx
+			self.idx = int(table_idx)
+			if self.idx > getattr(self.table, f"_last_{type(self).__name__}", -1):
+				setattr(self.table, f"_last_{type(self).__name__}", self.idx)
+			if initial_data and hasattr(initial_data, "__iter__"):
+				for i, v in enumerate(initial_data):
+					self[i] = v
 
 		def __iter__(self) -> T.Iterable[T.Any]:
 			for idx in range(len(self)):
 				yield self[idx]
-
-		def metadata(self, **values) -> T.Dict:
-			return self.table._metadata.setdefault((type(self).__name__, self.idx), {}).update(dict(values))
 
 		@abstractmethod
 		def __getitem__(self, idx):
@@ -43,37 +92,33 @@ class Table(MutableMapping):
 		def __len__(self):
 			pass
 
+	# # #
+
 	class Column(TableSubset):
 
-		def __init__(self, table: "Table", idx: int):
-			super().__init__(table, idx)
-			if self.idx > getattr(self.table, "_last_column", -1):
-				self.table._last_column = self.idx
-
 		def __getitem__(self, idx: int) -> T.Any:
-			return self.table[(self.idx, idx)]
+			return self.table.cell(self.idx, idx)
 
 		def __setitem__(self, idx: int, item: T.Any):
-			self.table[(self.idx, idx)] = item
+			self.table.cell(self.idx, idx).set(item)
 
 		def __len__(self) -> int:
 			return getattr(self.table, "_last_row", -1) + 1
 
+	# # #
+
 	class Row(TableSubset):
 
-		def __init__(self, table: "Table", idx: int):
-			super().__init__(table, idx)
-			if self.idx > getattr(self.table, "_last_row", -1):
-				self.table._last_row = self.idx
-
 		def __getitem__(self, idx: int) -> T.Any:
-			return self.table[(idx, self.idx)]
+			return self.table.cell(idx, self.idx)
 
-		def __setitem__(self, idx: int, item: T.Any):
-			self.table[(idx, self.idx)] = item
+		def __setitem__(self, idx: int) -> T.Any:
+			self.table.cell(idx, self.idx).set(item)
 
 		def __len__(self) -> int:
 			return getattr(self.table, "_last_column", -1) + 1
+
+	# # #
 
 	class TableView(ABC, MappingView):
 
@@ -93,7 +138,7 @@ class Table(MutableMapping):
 				yield self[idx]
 
 		def __getitem__(self, idx: int) -> "Table.TableSubset":
-			if idx < len(self):
+			if idx > 0:
 				if idx not in self.cache:
 					self.cache[idx] = self.subset_factory(idx)
 				return self.cache[idx]
@@ -108,6 +153,8 @@ class Table(MutableMapping):
 		def __len__(self):
 			pass
 
+	# # #
+
 	class ColumsView(TableView):
 
 		def subset_factory(self, idx: int) -> "Table.TableSubset":
@@ -116,6 +163,8 @@ class Table(MutableMapping):
 		def __len__(self) -> int:
 			return getattr(self.table, "_last_column", -1) + 1
 
+	# # #
+
 	class RowsView(TableView):
 
 		def subset_factory(self, idx: int) -> "Table.TableSubset":
@@ -123,6 +172,53 @@ class Table(MutableMapping):
 
 		def __len__(self) -> int:
 			return getattr(self.table, "_last_row", -1) + 1
+
+	# # #
+
+	@classmethod
+	def columnsview(cls, table: "Table") -> "Table.ColumnsView":
+		return cls.ColumnsView(table)
+
+	@classmethod
+	def rowsview(cls, table: "Table") -> "Table.RowsView":
+		return cls.RowsView(table)
+
+	def __init__(self, initial_data = None):
+		self._data = {}
+		self._metadata = {}
+		self._views = {}
+
+		if isinstance(initial_data, type(self)):
+			self.__dict__.update(getattr(initial_data, "__dict__"))
+
+	def cell(self, column: int, row: int, default: T.Any = None) -> "Table.Cell":
+		return self._data.setdefault((int(column), int(row)), Table.Cell(self, int(column), int(row), default))
+
+	def column(self, index: int, default: T.Iterable = None) -> "Table.Column":
+		col = self.columns()[int(index)]
+		if default:
+			for i, v in enumerate(default):
+				if not col[i]:
+					col[i] = v
+		return col
+
+	def row(self, index: int, default: T.Iterable = None) -> "Table.Row":
+		row = self.rows()[int(index)]
+		if default:
+			for i, v in enumerate(default):
+				if not row[i]:
+					row[i] = v
+		return row
+
+	def columns(self) -> "Table.TableView":
+		if "columns" not in self._views:
+			self._views["columns"] = type(self).columnsview(self)
+		return self._views["columns"]
+
+	def rows(self) -> "Table.TableView":
+		if "rows" not in self._views:
+			self._views["rows"] = type(self).rowsview(self)
+		return self._views["rows"]
 
 	@staticmethod
 	def index_alpha_to_num(value: str) -> int:
@@ -146,71 +242,3 @@ class Table(MutableMapping):
 				sequence.insert(0, remainder)
 			sequence.insert(0, value)
 			return "".join(sequence)
-
-	def __init__(self, data = None, metadata = None):
-		self._data = {}
-		self._metadata = {}
-		self._last_column = -1
-		self._last_row = -1
-		self._views = {}
-
-	def shift_last_index(self, index_type, val):
-		l_idx = f"_last_{str(index_type).strip().casefold()}"
-		if int(val) > getattr(self, l_idx, -1):
-			setattr(self, l_idx, int(val))
-
-	def __getitem__(self, key: T.Tuple[int]) -> T.Any:
-		if isinstance(key, tuple) and len(key) == 2 and all(isinstance(k, int) for k in key):
-			try:
-				return self._data[key]
-			except KeyError:
-				raise KeyError(key) from None
-
-	def __setitem__(self, key: T.Tuple[int], value: T.Any):
-		if isinstance(key, tuple) and len(key) == 2 and all(isinstance(k, int) for k in key):
-			self._data[key] = value
-			self.shift_last_index("column", key[0])
-			self.shift_last_index("row", key[1])
-		else:
-			raise TypeError(type(key).__name__)
-
-	@classmethod
-	def columnsview(cls, table: "Table") -> "Table.ColumnsView":
-		return cls.ColumnsView(table)
-
-	@classmethod
-	def rowsview(cls, table: "Table") -> "Table.RowsView":
-		return cls.RowsView(table)
-
-	def columns(self) -> "Table.TableView":
-		if "columns" not in self._views:
-			self._views["columns"] = type(self).columnsview(self)
-		return self._views["columns"]
-
-	def rows(self) -> "Table.TableView":
-		if "rows" not in self._views:
-			self._views["rows"] = type(self).rowsview(self)
-		return self._views["rows"]
-
-	def get(self, *args, default: T.Any = None) -> T.Any | None:
-		_sentinel = object()
-		key = _sentinel
-
-		if len(args) == 1 and not isinstance(args[0], str):
-			if isinstance(args[0], Iterable):
-				if not isinstance(args[0], Sequence):
-					key = tuple(v for v in args[0])
-				else:
-					key = tuple(args[0])
-		elif len(args) == 2 and all(isinstance(a, (int, str)) for a in args):
-			key = tuple(args)
-
-		if key is _sentinel:
-			raise TypeError("Provide either two arguments or a single sequence of length 2 as key.")
-
-		try:
-			return self[key]
-		except KeyError:
-			if default is not None:
-				return default
-			raise
