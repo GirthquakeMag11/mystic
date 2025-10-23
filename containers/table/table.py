@@ -18,23 +18,29 @@ class Table(MutableMapping):
 
 	class TableElement(ABC):
 
-		def __init_subclass__(cls):
-			super().__init_subclass__(cls)
-			if not hasattr(cls, "__str__"):
-				warnings.warn(f"TableElement subclass {cls.__name__} missing '__str__' method, metadata storage non-functional.", UserWarning)
+		def __getattr__(self, name):
+			if not hasattr(self, name):
+				try:
+					return self.metadata()[name]
+				except KeyError:
+					raise AttributeError(name) from None
+
+		def __str__(self) -> str:
+			return "_".join([type(self).__name__, *self.alpha_index])
 
 		def metadata(self, **values):
-			if not hasattr(self, "__str__"):
-				warnings.warn(f"TableElement subclass {cls.__name__} missing '__str__' method, metadata storage non-functional.", UserWarning)
-				return
 			if str(self) not in self.table._metadata:
-				return self.table._metadata.setdefault(str(self), dict(values))
+				return self.table._metadata.setdefault(str(self), {})
 			self.table._metadata[str(self)].update(dict(values))
 			return self.table._metadata[str(self)]
 
-		@abstractmethod
-		def __str__(self):
-			pass
+		@property
+		def title(self):
+			return self.metadata().get("title", self.alpha_index)
+
+		@title.setter
+		def title(self, value):
+			self.metadata(title=str(value))
 
 	# # #
 
@@ -53,8 +59,13 @@ class Table(MutableMapping):
 			if isinstance(self.value, Table.Cell):
 				object.__setattr__(self, "value", self.value.value)
 
-		def __str__(self):
-			return f"{type(self).__name__}_{self.column}x{self.row}"
+		@property
+		def num_index(self):
+			return (int(self.column), int(self.row))
+
+		@property
+		def alpha_index(self):
+			return (Table.index_num_to_alpha(self.column), Table.index_num_to_alpha(self.row))
 
 	# # #
 
@@ -79,6 +90,14 @@ class Table(MutableMapping):
 		def __iter__(self) -> T.Iterable[T.Any]:
 			for idx in range(len(self)):
 				yield self[idx]
+
+		@property
+		def num_index(self):
+			return int(self.idx)
+
+		@property
+		def alpha_index(self):
+			return Table.index_num_to_alpha(self.num_index)
 
 		@abstractmethod
 		def __getitem__(self, idx):
@@ -183,6 +202,8 @@ class Table(MutableMapping):
 	def rowsview(cls, table: "Table") -> "Table.RowsView":
 		return cls.RowsView(table)
 
+	# # #
+
 	def __init__(self, initial_data = None):
 		self._data = {}
 		self._metadata = {}
@@ -190,6 +211,8 @@ class Table(MutableMapping):
 
 		if isinstance(initial_data, type(self)):
 			self.__dict__.update(getattr(initial_data, "__dict__"))
+
+	# # #
 
 	def cell(self, column: int, row: int, default: T.Any = None) -> "Table.Cell":
 		return self._data.setdefault((int(column), int(row)), Table.Cell(self, int(column), int(row), default))
@@ -220,8 +243,14 @@ class Table(MutableMapping):
 			self._views["rows"] = type(self).rowsview(self)
 		return self._views["rows"]
 
+	# # #
+
 	@staticmethod
 	def index_alpha_to_num(value: str) -> int:
+		"""
+		Converts alphabetic column/row index to alphabetic form
+		e.g. "A" -> 0, "B" -> 1, "Z" -> 25, "AA" -> 26, etc.
+		"""
 		if isinstance(value, str):
 			if len(value) == 1:
 				return ord(val.casefold() - ord("a"))
@@ -234,6 +263,10 @@ class Table(MutableMapping):
 
 	@staticmethod
 	def index_num_to_alpha(value: int) -> str:
+		"""
+		Converts numeric column/row index to alphabetic form
+		e.g. 0 -> "A", 1 -> "B", 25 -> "Z", 26 = "AA", etc.
+		"""
 		if isinstance(value, int):
 			sequence = []
 			while value >= 26:
