@@ -7,7 +7,7 @@ from collections.abc import (
 	MutableSequence,
 	Sequence,
 	)
-import string
+from string import ascii_uppercase
 
 class Table(MutableMapping):
 
@@ -108,7 +108,7 @@ class Table(MutableMapping):
 		def __len__(self):
 			pass
 
-	class ColumsView(TableView):
+	class ColumnsView(TableView):
 
 		def subset_factory(self, idx: int) -> "Table.TableSubset":
 			return Table.Column(self.table, idx)
@@ -127,24 +127,25 @@ class Table(MutableMapping):
 	@staticmethod
 	def index_alpha_to_num(value: str) -> int:
 		if isinstance(value, str):
-			if len(value) == 1:
-				return ord(val.casefold() - ord("a"))
-			elif len(value) > 1:
-				return sum(Table.index_num_to_alpha(char) for char in value)
-			else:
-				raise ValueError(value)
-		else:
-			raise TypeError(type(value).__name__)
+			value = value.strip().upper()
+			result = 0
+			for char in value:
+				if char not in ascii_uppercase:
+					raise ValueError(f"Invalid character {char} in index {value}")
+				result = result * 26 + ascii_uppercase.index(char)
+			return result
 
 	@staticmethod
 	def index_num_to_alpha(value: int) -> str:
 		if isinstance(value, int):
+			if value < 0:
+				raise ValueError(f"Invalid index integer {value}")
 			sequence = []
 			while value >= 26:
 				value, remainder = divmod(value, 26)
 				value -= 1
-				sequence.insert(0, remainder)
-			sequence.insert(0, value)
+				sequence.insert(0, ascii_uppercase[remainder])
+			sequence.insert(0, ascii_uppercase[value])
 			return "".join(sequence)
 
 	def __init__(self, data = None, metadata = None):
@@ -191,26 +192,3 @@ class Table(MutableMapping):
 		if "rows" not in self._views:
 			self._views["rows"] = type(self).rowsview(self)
 		return self._views["rows"]
-
-	def get(self, *args, default: T.Any = None) -> T.Any | None:
-		_sentinel = object()
-		key = _sentinel
-
-		if len(args) == 1 and not isinstance(args[0], str):
-			if isinstance(args[0], Iterable):
-				if not isinstance(args[0], Sequence):
-					key = tuple(v for v in args[0])
-				else:
-					key = tuple(args[0])
-		elif len(args) == 2 and all(isinstance(a, (int, str)) for a in args):
-			key = tuple(args)
-
-		if key is _sentinel:
-			raise TypeError("Provide either two arguments or a single sequence of length 2 as key.")
-
-		try:
-			return self[key]
-		except KeyError:
-			if default is not None:
-				return default
-			raise
